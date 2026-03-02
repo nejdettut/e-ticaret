@@ -6,4 +6,4 @@ Pillow==10.2.0
 numpy==1.26.4
 python-dotenv==1.0.1
 requests==2.31.0
-huggingface_hub
+huggingface_hub==0.21.0
