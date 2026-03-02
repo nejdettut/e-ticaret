@@ -13,15 +13,17 @@ from image_processor import (
     add_white_background, add_gradient_background, apply_vignette
 )
 from gemini_handler import (
-    analyze_product, generate_product_prompt, enhance_image_description
+    analyze_product, generate_product_prompt, enhance_image_description, generate_ai_image
 )
+from huggingface_handler import generate_ai_image_hf
 from groq_handler import generate_editing_guide, generate_hashtags
 
-load_dotenv()
+# Zorunlu olarak en güncel .env dosyasını yeniden yüklemesine zorluyoruz
+load_dotenv(override=True)
 
 # ─── SAYFA AYARLARI ───────────────────────────────────────────────
 st.set_page_config(
-    page_title="📸 AI Ürün Fotoğrafçısı",
+    page_title="📸 AI Ürün Fotoğrafçısı (Generative)",
     page_icon="📸",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -60,61 +62,48 @@ st.markdown("""
     div[data-testid="stTabs"] button {
         font-size: 1rem; font-weight: 600;
     }
+    .ai-magic-btn {
+        background: linear-gradient(90deg, #FFB75E 0%, #ED8F03 100%);
+        color: white;
+        font-weight: bold;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ─── BAŞLIK ───────────────────────────────────────────────────────
-st.markdown('<div class="main-title">📸 AI Ürün Fotoğrafçısı</div>', 
+st.markdown('<div class="main-title">✨ AI Gen. Ürün Fotoğrafçısı</div>', 
             unsafe_allow_html=True)
-st.markdown('<div class="subtitle">Ürün fotoğraflarını Instagram, E-Ticaret ve daha fazlası için optimize edin</div>', 
+st.markdown('<div class="subtitle">Elinizdeki fotoğrafı profesyonel stüdyo kalitesinde yapay zeka ile baştan yaratın</div>', 
             unsafe_allow_html=True)
 
 st.divider()
 
 # ─── SIDEBAR ──────────────────────────────────────────────────────
 with st.sidebar:
-    st.header("⚙️ Ayarlar")
-    
-    # AI Model seçimi
-    st.subheader("🤖 AI Model")
-    ai_model = st.selectbox(
-        "Kullanılacak AI",
-        ["🔵 Gemini (Görsel Analiz)", "🟠 Groq (Metin Rehberi)"],
-        help="Gemini fotoğrafı görsel olarak analiz eder. Groq metin tabanlı rehber üretir."
-    )
-    
-    st.divider()
+    st.header("⚙️ Üretim Ayarları")
     
     # Platform seçimi
-    st.subheader("🎯 Platform")
+    st.subheader("🎯 Hedef Platform ve Boyut")
     platform_name = st.selectbox(
-        "Hedef Platform",
+        "Kullanılacak Alan",
         list(PLATFORM_PRESETS.keys()),
         format_func=lambda x: f"{PLATFORM_PRESETS[x]['icon']} {x}"
     )
     preset = PLATFORM_PRESETS[platform_name]
     
     # Platform bilgisi
-    with st.expander("📋 Platform Detayları"):
-        st.markdown(f"**Boyut:** {preset['size'][0]}x{preset['size'][1]} px")
+    with st.expander("📋 Platform Detayları", expanded=True):
         st.markdown(f"**Oran:** {preset['aspect']}")
         st.markdown(f"**Stil:** {preset['style']}")
-        st.markdown(f"**Açıklama:** {preset['description']}")
+        st.markdown(f"**Arka Plan:** {preset['background']}")
     
     st.divider()
     
-    # Işık seçimi
-    st.subheader("💡 Işık Stili")
-    lighting_name = st.selectbox("Işık Tipi", list(LIGHTING_STYLES.keys()))
-    lighting_desc = LIGHTING_STYLES[lighting_name]
-    
-    st.divider()
-    
-    # Görüntü ayarları
-    st.subheader("🎨 Görüntü Ayarları")
+    # Manuel Görüntü Ayarları (Filtreler)
+    st.subheader("🎨 Manuel Görüntü Ayarları")
     brightness = st.slider("☀️ Parlaklık", 0.5, 2.0, 1.0, 0.1)
     contrast = st.slider("🌗 Kontrast", 0.5, 2.0, 1.0, 0.1)
-    sharpen = st.checkbox("✨ Netleştir", value=True)
+    sharpen = st.checkbox("✨ Netleştir", value=False)
     auto_enh = st.checkbox("🪄 Otomatik İyileştir", value=False)
     
     st.divider()
@@ -128,10 +117,17 @@ with st.sidebar:
     
     st.divider()
     
+    # Işık seçimi
+    st.subheader("💡 Konsept (Işık & Atmosfer)")
+    lighting_name = st.selectbox("Işık Tipi", list(LIGHTING_STYLES.keys()))
+    lighting_desc = LIGHTING_STYLES[lighting_name]
+    
+    st.divider()
+    
     # Ek bilgiler
-    st.subheader("📝 Ek Bilgiler")
-    product_name = st.text_input("Ürün Adı (opsiyonel)", placeholder="Örn: Kırmızı Çanta")
-    extra_notes = st.text_area("Özel İstekler", placeholder="Örn: Lüks görünüm, koyu tema istiyorum...", height=80)
+    st.subheader("📝 Yapay Zeka Ek Detaylar")
+    product_name = st.text_input("Ürünün Adı/Cinsi", placeholder="Örn: Siyah Erkek Deri Ayakkabı")
+    extra_notes = st.text_area("Yapay Zekaya Özel İstek", placeholder="Örn: Fotoğraf lüks görünsün, zemin mermer olsun", height=80)
 
 # ─── ANA ALAN ─────────────────────────────────────────────────────
 tab1, tab2, tab3 = st.tabs(["📤 Fotoğraf Yükle", "🔍 Analiz & Düzenleme", "📊 Sonuç & İndir"])
@@ -232,63 +228,90 @@ with tab2:
             """, unsafe_allow_html=True)
         
         with col_right:
-            st.subheader("🤖 AI Analizi")
-            
-            if st.button("🔍 AI ile Analiz Et", type="primary", use_container_width=True):
-                with st.spinner("AI analiz yapıyor..."):
-                    try:
-                        if "Gemini" in ai_model:
-                            analysis = enhance_image_description(img, platform_name)
-                            st.session_state["ai_analysis"] = analysis
-                        else:
-                            # Groq metin tabanlı
-                            analysis = generate_editing_guide(
-                                platform_name, preset, lighting_desc,
-                                product_name or "genel ürün", extra_notes
+            st.subheader("🛠️ Düzenleme Seçenekleri")
+            edit_tab1, edit_tab2 = st.tabs(["🖌️ Manuel Düzenleme (Filtreler)", "🤖 Yapay Zeka İle Üret (Hugging Face)"])
+
+            with edit_tab1:
+                st.info("Orijinal fotoğrafınızı klasik fotoğraf filtreleriyle (Parlaklık, Kontrast, Keskinlik vs.) düzenler.")
+                if st.button("🪄 Manuel Düzenlemeyi Uygula", type="primary", use_container_width=True):
+                    with st.spinner("Görüntü işleniyor..."):
+                        processed = img.copy()
+                        
+                        # 1. Otomatik iyileştirme
+                        if auto_enh:
+                            processed = auto_enhance(processed)
+                        
+                        # 2. Parlaklık/Kontrast
+                        processed = adjust_brightness_contrast(processed, brightness, contrast)
+                        
+                        # 3. Netleştirme
+                        if sharpen:
+                            processed = sharpen_image(processed)
+                        
+                        # 4. Arka plan
+                        if bg_option == "Beyaz":
+                            processed = add_white_background(processed)
+                        elif bg_option == "Açık Gradient":
+                            processed = add_gradient_background(processed, (255,255,255), (230,235,245))
+                        elif bg_option == "Koyu Gradient":
+                            processed = add_gradient_background(processed, (50,50,70), (20,20,30))
+                        
+                        # 5. Platform boyutuna göre yeniden boyutlandır
+                        resized = resize_for_platform(processed, preset["size"])
+                        
+                        st.session_state["processed_image"] = resized
+                        st.success("✅ Manuel Düzenleme tamamlandı!")
+
+            with edit_tab2:
+                st.info("Bu işlem, tamamen ÜCRETSİZ Hugging Face (Stable Diffusion) API'sini kullanarak fotoğrafı yeniden resmeder.")
+
+                if st.button("✨ Yapay Zeka ile Yeniden Çiz (Hugging Face)", type="primary", use_container_width=True):
+                    with st.spinner("⏳ Adım 1: Fotoğraf analiz ediliyor ve prompt yazılıyor..."):
+                        try:
+                            # İlk olarak Gemini ile profesyonel fotoğraf promptu oluşturuyoruz (Gemini hala ücretsiz okuma desteği veriyor)
+                            # Lighting default since we removed it from sidebar
+                            generated_prompt = generate_product_prompt(
+                                img, preset, lighting_desc, 
+                                extra_notes, product_name
                             )
-                            st.session_state["ai_analysis"] = analysis
-                        st.success("✅ Analiz tamamlandı!")
-                    except Exception as e:
-                        st.error(f"❌ Hata: {str(e)}")
-        
-        # AI Analiz sonucu
-        if "ai_analysis" in st.session_state:
-            with st.expander("📋 AI Analiz Raporu", expanded=True):
-                st.markdown(st.session_state["ai_analysis"])
-        
-        st.divider()
-        
-        # DÜZENLEME VE ÖNIZLEME
-        st.subheader("✏️ Düzenle & Önizle")
-        
-        if st.button("🪄 Düzenlemeleri Uygula & Önizle", type="primary", use_container_width=True):
-            with st.spinner("Görüntü işleniyor..."):
-                processed = img.copy()
-                
-                # 1. Otomatik iyileştirme
-                if auto_enh:
-                    processed = auto_enhance(processed)
-                
-                # 2. Parlaklık/Kontrast
-                processed = adjust_brightness_contrast(processed, brightness, contrast)
-                
-                # 3. Netleştirme
-                if sharpen:
-                    processed = sharpen_image(processed)
-                
-                # 4. Arka plan
-                if bg_option == "Beyaz":
-                    processed = add_white_background(processed)
-                elif bg_option == "Açık Gradient":
-                    processed = add_gradient_background(processed, (255,255,255), (230,235,245))
-                elif bg_option == "Koyu Gradient":
-                    processed = add_gradient_background(processed, (50,50,70), (20,20,30))
-                
-                # 5. Platform boyutuna göre yeniden boyutlandır
-                resized = resize_for_platform(processed, preset["size"])
-                
-                st.session_state["processed_image"] = resized
-                st.success("✅ Düzenleme tamamlandı!")
+                            st.session_state["ai_prompt"] = generated_prompt
+                            
+                            st.success("✅ Analiz Tamamlandı. Görüntü üretimi başlıyor...")
+                        
+                        except Exception as e:
+                            st.error(f"❌ Analiz Hatası: {str(e)}")
+                            generated_prompt = None
+
+                    if generated_prompt:
+                        with st.spinner("⏳ Adım 2: Hugging Face yeni resmi çiziyor (Bu biraz vakit alabilir)..."):
+                            try:
+                                # Prompt'un sonundaki "IMAGE_PROMPT:" kısmını ayıklıyoruz
+                                if "IMAGE_PROMPT:" in generated_prompt:
+                                    actual_prompt = generated_prompt.split("IMAGE_PROMPT:")[1].strip()
+                                else:
+                                    actual_prompt = generated_prompt 
+                                
+                                st.session_state["image_prompt_text"] = actual_prompt
+
+                                # generate via hugging face
+                                new_image = generate_ai_image_hf(actual_prompt)
+                                
+                                # Platform boyutuna getir
+                                new_image_resized = resize_for_platform(new_image, preset["size"], keep_ratio=False)
+                                
+                                # İndirme kısmında kullanılabilmesi için atıyoruz
+                                st.session_state["processed_image"] = new_image_resized
+                                st.success("🎉 Mükemmel! Stable Diffusion ile yepyeni bir görsel üretildi!")
+                            
+                            except Exception as e:
+                                st.error(f"❌ Üretim Hatası (Hugging Face): {str(e)}")
+
+        # Üretilen Prompt Gösterimi
+        if "ai_prompt" in st.session_state:
+            with st.expander("📋 Son Üretilen AI Promptu (Gizli Gönderilen)", expanded=False):
+                st.markdown(st.session_state["ai_prompt"])
+                st.write("---")
+                st.write("**Aktif Prompt:**", st.session_state.get("image_prompt_text", ""))
         
         # Karşılaştırma görünümü
         if "processed_image" in st.session_state:

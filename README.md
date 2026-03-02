@@ -1,23 +1,10 @@
-# 📸 AI Ürün Fotoğrafçısı
+# e-ticaret
 
-Ürün fotoğraflarını Instagram, E-Ticaret, Pinterest ve daha fazlası 
-için AI ile otomatik optimize eden Streamlit uygulaması.
-
-## Özellikler
-- 📷 Dosya yükleme + Kamera desteği
-- 🤖 Gemini Vision ile görsel analiz
-- 🔄 Groq ile metin tabanlı rehber (yedek)
-- 🎨 OpenCV ile görüntü işleme
-- 📐 6 farklı platform preset
-- 💡 6 farklı ışık stili
-- ⬇️ JPG/PNG indirme
-- # Hashtag üretici
+E-Ticaret ürün görsellerini optimize eden, Gemini ve Hugging Face destekli yapay zeka fotoğraf stüdyosu.
 
 ## Kurulum
-pip install -r requirements.txt
-cp .env.example .env  # API anahtarlarını ekle
-streamlit run app.py
-
-## API Anahtarları
-- Gemini: https://aistudio.google.com/app/apikey
-- Groq: https://console.groq.com/keys
+1. `python -m venv .venv`
+2. `.\.venv\Scripts\activate`
+3. `pip install -r requirements.txt`
+4. `.env` dosyası oluşturup API anahtarlarınızı (`GEMINI_API_KEY`, `GROQ_API_KEY`, `HF_API_KEY`) ekleyin.
+5. `streamlit run app.py`

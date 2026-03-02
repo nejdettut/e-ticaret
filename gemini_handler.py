@@ -14,7 +14,7 @@ def init_gemini():
     if not api_key:
         raise ValueError("GEMINI_API_KEY bulunamadı! .env dosyasını kontrol edin.")
     genai.configure(api_key=api_key)
-    return genai.GenerativeModel("gemini-1.5-flash")
+    return genai.GenerativeModel("gemini-2.5-flash")
 
 def image_to_base64(pil_image):
     """PIL Image'ı base64'e çevir"""
@@ -107,3 +107,37 @@ Emoji kullan, samimi ve pratik ol."""
     
     response = model.generate_content([prompt, img_data])
     return response.text
+
+def generate_ai_image(prompt, aspect_ratio="1:1"):
+    """
+    google-genai kütüphanesi kullanarak Imagen 3 modeli ile yapay zeka görüntüsü üret.
+    """
+    import os
+    from google import genai
+    from google.genai import types
+    from PIL import Image
+    import io
+    
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY bulunamadı! .env dosyasını kontrol edin.")
+        
+    client = genai.Client(api_key=api_key)
+    
+    # imagen-4.0-generate-001 model
+    result = client.models.generate_images(
+        model='imagen-4.0-generate-001',
+        prompt=prompt,
+        config=types.GenerateImagesConfig(
+            number_of_images=1,
+            aspect_ratio=aspect_ratio,
+            output_mime_type="image/jpeg"
+        )
+    )
+    
+    # Get the raw bytes
+    generated_image_bytes = result.generated_images[0].image.image_bytes
+    
+    # Convert to PIL Image
+    image = Image.open(io.BytesIO(generated_image_bytes))
+    return image

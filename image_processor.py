@@ -55,21 +55,29 @@ def adjust_brightness_contrast(pil_image, brightness=1.0, contrast=1.0):
 def sharpen_image(pil_image):
     """Görüntü netleştirme"""
     img = pil_to_cv2(pil_image)
-    kernel = np.array([[0, -1, 0],
-                       [-1, 5, -1],
-                       [0, -1, 0]])
+    # Daha yumuşak bir keskinleştirme matrisi
+    kernel = np.array([[0, -0.5, 0],
+                       [-0.5, 3, -0.5],
+                       [0, -0.5, 0]])
     sharpened = cv2.filter2D(img, -1, kernel)
     return cv2_to_pil(sharpened)
 
 def resize_for_platform(pil_image, target_size, keep_ratio=True):
     """Platform boyutuna göre yeniden boyutlandır"""
     if keep_ratio:
-        pil_image.thumbnail(target_size, Image.Resampling.LANCZOS)
+        img_w, img_h = pil_image.size
+        ratio = min(target_size[0] / img_w, target_size[1] / img_h) * 0.98
+        new_size = (int(img_w * ratio), int(img_h * ratio))
+        
+        # Eğer resmi büyütüyorsak BICUBIC, küçültüyorsak LANCZOS daha iyi sonuç verebilir
+        resample_method = Image.Resampling.BICUBIC if ratio > 1.0 else Image.Resampling.LANCZOS
+        resized_img = pil_image.resize(new_size, resample_method)
+        
         # Arka plan oluştur ve ortala
         background = Image.new("RGB", target_size, (255, 255, 255))
-        offset = ((target_size[0] - pil_image.size[0]) // 2,
-                  (target_size[1] - pil_image.size[1]) // 2)
-        background.paste(pil_image, offset)
+        offset = ((target_size[0] - new_size[0]) // 2,
+                  (target_size[1] - new_size[1]) // 2)
+        background.paste(resized_img, offset)
         return background
     else:
         return pil_image.resize(target_size, Image.Resampling.LANCZOS)
@@ -138,7 +146,7 @@ def auto_enhance(pil_image):
     kernel = np.array([[0,-0.5,0],[-0.5,3,-0.5],[0,-0.5,0]])
     enhanced = cv2.filter2D(enhanced, -1, kernel)
     
-    # 3. Denoise
-    enhanced = cv2.fastNlMeansDenoisingColored(enhanced, None, 5, 5, 7, 21)
+    # 3. Denoise (Daha hafif)
+    enhanced = cv2.fastNlMeansDenoisingColored(enhanced, None, 3, 3, 7, 21)
     
     return cv2_to_pil(enhanced)
